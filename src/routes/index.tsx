@@ -1,24 +1,43 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { Copy, Download, Eye, FilePlus2, History, Pencil, Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { InvoiceForm } from "@/features/invoices/InvoiceForm";
+import { InvoicePreview } from "@/features/invoices/InvoicePreview";
+import { downloadInvoicePdf } from "@/features/invoices/pdf";
+import { calculateTotals, defaultProfile, formatMoney, invoiceSchema, newInvoice, nextInvoiceNumber, type Invoice, type Profile } from "@/features/invoices/model";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
+const STORAGE = "invoice-studio-invoices-v1"; const PROFILE = "invoice-studio-profile-v1";
+const starter: Invoice = { id: "draft", profile: defaultProfile, client: { name: "", address: "", city: "", state: "", postalCode: "", gstin: "", email: "" }, invoiceNumber: "#01", invoiceDate: "2026-10-04", dueDate: "2026-10-18", currency: "INR", status: "Unpaid", items: [{ id: "item-1", description: "Podcast Editing", quantity: 1, rate: 2000 }], discount: 0, taxRate: 0, advancePaid: 1000, notes: "", createdAt: "2026-10-04T00:00:00.000Z", updatedAt: "2026-10-04T00:00:00.000Z" };
+
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({ meta: [{ title: "Invoice Studio — Professional Invoice Generator" }, { name: "description", content: "Create, preview, save, and download polished A4 invoices for freelance work." }, { property: "og:title", content: "Invoice Studio — Professional Invoice Generator" }, { property: "og:description", content: "Create professional client-ready A4 invoices in under a minute." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary_large_image" }] }),
+  component: InvoiceApp,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+function InvoiceApp() {
+  const [invoices, setInvoices] = useState<Invoice[]>([]); const [invoice, setInvoice] = useState<Invoice>(starter);
+  const [view, setView] = useState<"editor" | "history">("editor"); const [mobilePane, setMobilePane] = useState<"form" | "preview">("form");
+  const [ready, setReady] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
+  useEffect(() => { try { const saved = JSON.parse(localStorage.getItem(STORAGE) || "[]") as Invoice[]; const profile = JSON.parse(localStorage.getItem(PROFILE) || "null") as Profile | null; setInvoices(saved); setInvoice(newInvoice(profile || defaultProfile, nextInvoiceNumber(saved))); } catch { setInvoice(newInvoice(defaultProfile, "#01")); } setReady(true); }, []);
+  useEffect(() => { if (ready) localStorage.setItem(STORAGE, JSON.stringify(invoices)); }, [invoices, ready]);
+  const validate = () => { const result = invoiceSchema.safeParse(invoice); if (!result.success) { setError(result.error.issues[0]?.message || "Complete the required details."); return false; } setError(""); return true; };
+  const persist = () => { if (!validate()) return false; const saved = { ...invoice, updatedAt: new Date().toISOString() }; setInvoice(saved); setInvoices((all) => [saved, ...all.filter((x) => x.id !== saved.id)]); setNotice("Invoice saved"); window.setTimeout(() => setNotice(""), 2200); return true; };
+  const createFresh = () => { let profile = defaultProfile; try { profile = JSON.parse(localStorage.getItem(PROFILE) || "null") || defaultProfile; } catch { /* keep defaults */ } setInvoice(newInvoice(profile, nextInvoiceNumber(invoices))); setView("editor"); setMobilePane("form"); setError(""); };
+  const saveProfile = (profile: Profile) => { const parsed = invoiceSchema.shape.profile.safeParse(profile); if (!parsed.success) { setError(parsed.error.issues[0]?.message || "Check your details."); return; } localStorage.setItem(PROFILE, JSON.stringify(profile)); setNotice("Default details saved"); window.setTimeout(() => setNotice(""), 2200); };
+  const download = async (target = invoice) => { const result = invoiceSchema.safeParse(target); if (!result.success) { setError(result.error.issues[0]?.message || "Complete the required details."); return; } if (target.id === invoice.id) persist(); await downloadInvoicePdf(target); };
+  const edit = (target: Invoice) => { setInvoice(target); setView("editor"); setMobilePane("form"); };
+  const duplicate = (target: Invoice) => { const copy = { ...target, id: crypto.randomUUID(), invoiceNumber: nextInvoiceNumber(invoices), status: "Unpaid" as const, advancePaid: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), items: target.items.map((x) => ({ ...x, id: crypto.randomUUID() })) }; setInvoice(copy); setView("editor"); setMobilePane("form"); };
+  return <div className="app-shell">
+    <header className="app-header"><div className="header-inner"><div className="brand"><span className="brand-mark">IS</span><span>Invoice Studio</span></div><div className="header-actions"><Button variant="ghost" size="small" onClick={() => setView(view === "history" ? "editor" : "history")}>{view === "history" ? <Pencil size={15}/> : <History size={15}/>}<span>{view === "history" ? "Editor" : "History"}</span></Button><Button size="small" onClick={createFresh}><Plus size={15}/>New invoice</Button></div></div></header>
+    <main className="workspace">{view === "history" ? <HistoryView invoices={invoices} onNew={createFresh} onEdit={edit} onView={edit} onDuplicate={duplicate} onDownload={download} onDelete={(id) => setInvoices((all) => all.filter((x) => x.id !== id))}/> : <>
+      <div className="page-top"><div><h1>Create invoice</h1><p>Enter the details. Your invoice updates as you type.</p></div><div className="page-top-actions"><Button variant="secondary" onClick={persist}>Save invoice</Button><Button onClick={() => void download()}><Download size={16}/>Download PDF</Button></div></div>
+      {error && <div className="error-banner" role="alert">{error}</div>}{notice && <div className="error-banner" role="status">{notice}</div>}
+      <div className="mobile-tabs"><button className={mobilePane === "form" ? "active" : ""} onClick={() => setMobilePane("form")}>Details</button><button className={mobilePane === "preview" ? "active" : ""} onClick={() => setMobilePane("preview")}>Preview</button></div>
+      <div className="editor-layout"><section className={`editor-panel ${mobilePane !== "form" ? "mobile-hidden" : ""}`}><InvoiceForm invoice={invoice} setInvoice={setInvoice} saveProfile={saveProfile}/></section><aside className={`preview-panel ${mobilePane !== "preview" ? "mobile-hidden" : ""}`}><div className="preview-toolbar"><span>LIVE A4 PREVIEW</span><span>{invoice.currency}</span></div><div className="preview-frame"><InvoicePreview invoice={invoice}/></div></aside></div>
+    </>}</main>
+  </div>;
+}
+function HistoryView({ invoices, onNew, onEdit, onView, onDuplicate, onDownload, onDelete }: { invoices: Invoice[]; onNew: () => void; onEdit: (i: Invoice) => void; onView: (i: Invoice) => void; onDuplicate: (i: Invoice) => void; onDownload: (i: Invoice) => void; onDelete: (id: string) => void }) {
+  return <section className="history-view"><div className="history-toolbar"><div><h2>Invoice history</h2><p>All invoices saved on this device</p></div><Button onClick={onNew}><FilePlus2 size={16}/>Create new invoice</Button></div><div className="table-wrap">{invoices.length === 0 ? <div className="empty"><p>No saved invoices yet.</p><Button onClick={onNew}>Create your first invoice</Button></div> : <table className="history-table"><thead><tr><th>Invoice</th><th>Client</th><th>Date</th><th>Amount</th><th>Status</th><th aria-label="Actions"/></tr></thead><tbody>{invoices.map((item) => <tr key={item.id}><td><strong>{item.invoiceNumber}</strong></td><td>{item.client.name}</td><td>{item.invoiceDate}</td><td>{formatMoney(calculateTotals(item).total, item.currency)}</td><td><span className={`status ${calculateTotals(item).balance <= .005 || item.status === "Paid" ? "status-paid" : ""}`}>{calculateTotals(item).balance <= .005 ? "Paid" : item.status}</span></td><td><div className="row-actions"><Button variant="ghost" size="icon" title="View" aria-label="View invoice" onClick={() => onView(item)}><Eye size={16}/></Button><Button variant="ghost" size="icon" title="Edit" aria-label="Edit invoice" onClick={() => onEdit(item)}><Pencil size={16}/></Button><Button variant="ghost" size="icon" title="Duplicate" aria-label="Duplicate invoice" onClick={() => onDuplicate(item)}><Copy size={16}/></Button><Button variant="ghost" size="icon" title="Download PDF" aria-label="Download invoice PDF" onClick={() => void onDownload(item)}><Download size={16}/></Button><Button variant="danger" size="icon" title="Delete" aria-label="Delete invoice" onClick={() => onDelete(item.id)}><Trash2 size={16}/></Button></div></td></tr>)}</tbody></table>}</div></section>;
 }
