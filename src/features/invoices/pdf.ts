@@ -2,14 +2,15 @@ import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { calculateTotals, currencySymbol, displayDate, type Invoice } from "./model";
 
-const BLUE = [20, 126, 238] as const;
-const INK = [15, 23, 42] as const;
-const MUTED = [98, 116, 130] as const;
+type PdfColor = readonly [number, number, number];
+const BLUE: PdfColor = [20, 126, 238];
+const INK: PdfColor = [15, 23, 42];
+const MUTED: PdfColor = [98, 116, 130];
 export async function downloadInvoicePdf(invoice: Invoice) {
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const totals = calculateTotals(invoice); const left = 10; const right = 200; const width = 190;
   const money = (n: number) => `${currencySymbol(invoice.currency)}${new Intl.NumberFormat(invoice.currency === "INR" ? "en-IN" : "en-US", { maximumFractionDigits: 2 }).format(n)}`;
-  const text = (value: string, x: number, y: number, size = 9, weight: "normal" | "bold" = "normal", color: readonly number[] = INK, options?: Parameters<typeof doc.text>[3]) => { doc.setFont("helvetica", weight); doc.setFontSize(size); doc.setTextColor(color[0], color[1], color[2]); doc.text(value, x, y, options); };
+  const text = (value: string, x: number, y: number, size = 9, weight: "normal" | "bold" = "normal", color: PdfColor = INK, options?: Parameters<typeof doc.text>[3]) => { doc.setFont("helvetica", weight); doc.setFontSize(size); doc.setTextColor(color[0], color[1], color[2]); doc.text(value, x, y, options); };
   const drawHeader = () => {
     doc.setFillColor(234, 248, 244); doc.roundedRect(left, 10, width, 62, 4, 4, "F");
     text("Invoice", 17, 24, 17, "bold"); text("Invoice No.", 193, 21, 8, "normal", MUTED, { align: "right" }); text(invoice.invoiceNumber, 193, 29, 12, "bold", INK, { align: "right" });
