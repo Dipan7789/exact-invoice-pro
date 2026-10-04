@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep invoice calculations, preview, persistence, and PDF export based on the shared invoice model so every output stays consistent.
